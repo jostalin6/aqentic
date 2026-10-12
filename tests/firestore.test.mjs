@@ -1,0 +1,12 @@
+import { before, after, beforeEach, test } from 'node:test';
+import { readFileSync } from 'node:fs';
+import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
+import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+let env;
+before(async()=>{env=await initializeTestEnvironment({projectId:'demo-aqentic',firestore:{rules:readFileSync('firestore.rules','utf8')}});});
+after(async()=>{await env?.cleanup();});
+beforeEach(async()=>{await env.clearFirestore();await env.withSecurityRulesDisabled(async c=>{await setDoc(doc(c.firestore(),'products/tool'),{name:'Tool'});});});
+test('public catalog is readable but not writable',async()=>{const db=env.unauthenticatedContext().firestore();await assertSucceeds(getDoc(doc(db,'products/tool')));await assertFails(setDoc(doc(db,'products/tool'),{name:'Changed'}));});
+test('bookmarks require ownership and an existing product',async()=>{const db=env.authenticatedContext('alice').firestore();await assertSucceeds(setDoc(doc(db,'users/alice/bookmarks/tool'),{productId:'tool',createdAt:serverTimestamp()}));await assertFails(getDoc(doc(env.authenticatedContext('bob').firestore(),'users/alice/bookmarks/tool')));await assertFails(setDoc(doc(db,'users/alice/bookmarks/unknown'),{productId:'unknown',createdAt:serverTimestamp()}));});
+test('users cannot forge billing state or add arbitrary bookmark fields',async()=>{const db=env.authenticatedContext('alice').firestore();await assertFails(setDoc(doc(db,'users/alice/billing/account'),{status:'active'}));await assertFails(setDoc(doc(db,'users/alice/bookmarks/tool'),{productId:'tool',createdAt:serverTimestamp(),role:'admin'}));});
+test('anonymous access to private records is denied',async()=>{const db=env.unauthenticatedContext().firestore();await assertFails(getDoc(doc(db,'users/alice/bookmarks/tool')));await assertFails(getDoc(doc(db,'donations/private')));});

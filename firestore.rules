@@ -1,0 +1,16 @@
+rules_version = '2';
+service cloud.firestore {
+ match /databases/{database}/documents {
+  function owner(uid) { return request.auth != null && request.auth.uid == uid; }
+  match /products/{id} { allow read: if true; allow write: if false; }
+  match /users/{uid}/bookmarks/{id} {
+   allow read, delete: if owner(uid);
+   allow create: if owner(uid) && request.resource.data.keys().hasOnly(['productId', 'createdAt']) && request.resource.data.productId == id && request.resource.data.createdAt == request.time && exists(/databases/$(database)/documents/products/$(id));
+   allow update: if false;
+  }
+  match /users/{uid}/subscriptions/{id} { allow read: if owner(uid); allow write: if false; }
+  match /users/{uid}/billing/{id} { allow read: if owner(uid); allow write: if false; }
+  match /{document=**} { allow read, write: if false; }
+ }
+}
+
